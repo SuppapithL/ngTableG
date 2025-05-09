@@ -1,0 +1,30 @@
+{
+  "name": "kengtable-g",
+  "version": "1.0.0",
+  "description": "KengtableG - Task Management System with ClickUp Integration",
+  "private": true,
+  "scripts": {
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:frontend": "cd frontend && npm start",
+    "start:backend": "cd example && go run main.go task_handlers.go task_category_handlers.go task_estimate_handlers.go task_log_handlers.go",
+    "install:frontend": "cd frontend && npm install",
+    "build:frontend": "cd frontend && npm run build",
+    "test:frontend": "cd frontend && npm test"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/KengtableG.git"
+  },
+  "keywords": [
+    "task-management",
+    "clickup",
+    "golang",
+    "react",
+    "material-ui"
+  ],
+  "author": "",
+  "license": "MIT"
+} 
