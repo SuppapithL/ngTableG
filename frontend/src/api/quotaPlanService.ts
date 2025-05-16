@@ -22,7 +22,7 @@ export interface CreateQuotaPlanRequest {
 const quotaPlanService = {
   // Get all quota plans
   getAllQuotaPlans: async (): Promise<QuotaPlan[]> => {
-    const response = await api.get('/quota-plans');
+    const response = await api.get('/api/quota-plans');
     
     // Transform camelCase response to snake_case for client components
     const plans = response.data.map((plan: any) => ({
@@ -41,7 +41,7 @@ const quotaPlanService = {
 
   // Get quota plans by year
   getQuotaPlansByYear: async (year: number): Promise<QuotaPlan[]> => {
-    const response = await api.get(`/quota-plans/by-year/${year}`);
+    const response = await api.get(`/api/quota-plans/year/${year}`);
     
     // Transform camelCase response to snake_case for client components
     const plans = response.data.map((plan: any) => ({
@@ -60,7 +60,7 @@ const quotaPlanService = {
 
   // Get quota plan by ID
   getQuotaPlanById: async (id: number): Promise<QuotaPlan> => {
-    const response = await api.get(`/quota-plans/${id}`);
+    const response = await api.get(`/api/quota-plans/${id}`);
     
     // Transform camelCase response to snake_case for client components
     const plan = {
@@ -88,7 +88,7 @@ const quotaPlanService = {
       createdByUserId: planData.created_by_user_id
     };
     
-    const response = await api.post('/quota-plans', requestData);
+    const response = await api.post('/api/quota-plans', requestData);
     
     // Transform camelCase response to snake_case for client components
     const plan = {
@@ -116,7 +116,7 @@ const quotaPlanService = {
     if (planData.quota_medical_expense_baht !== undefined) requestData.quotaMedicalExpenseBaht = planData.quota_medical_expense_baht;
     if (planData.created_by_user_id !== undefined) requestData.createdByUserId = planData.created_by_user_id;
     
-    const response = await api.put(`/quota-plans/${id}`, requestData);
+    const response = await api.put(`/api/quota-plans/${id}`, requestData);
     
     // Transform camelCase response to snake_case for client components
     const plan = {
@@ -135,7 +135,7 @@ const quotaPlanService = {
 
   // Delete quota plan
   deleteQuotaPlan: async (id: number): Promise<void> => {
-    await api.delete(`/quota-plans/${id}`);
+    await api.delete(`/api/quota-plans/${id}`);
   }
 };
 

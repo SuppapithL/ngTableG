@@ -3,13 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/tonk/pkeng-tableg/db/sqlc"
+	"github.com/kengtableg/pkeng-tableg/db/sqlc"
 )
 
 // TaskLogResponse is the response format for task log data
@@ -27,10 +29,59 @@ type TaskLogResponse struct {
 
 // TaskLogRequest represents the request body for creating or updating a task log
 type TaskLogRequest struct {
-	TaskID          int32     `json:"task_id"`
-	WorkedDay       float64   `json:"worked_day"`
-	WorkedDate      time.Time `json:"worked_date"`
-	IsWorkOnHoliday bool      `json:"is_work_on_holiday"`
+	TaskID          int32   `json:"task_id"`
+	WorkedDay       float64 `json:"worked_day"`
+	WorkedDate      string  `json:"worked_date"` // Changed to string to match frontend format
+	IsWorkOnHoliday bool    `json:"is_work_on_holiday"`
+}
+
+// Validate that total time logged for a date doesn't exceed 1 day
+func validateDayLimit(ctx context.Context, userID int32, date time.Time, workedDay float64, excludeLogID int32) error {
+	// Format the date as a string in the format needed for database queries
+	dateStr := date.Format("2006-01-02")
+
+	// Query task logs for this date and user (excluding the current log if updating)
+	query := `
+		SELECT COALESCE(SUM(CAST(worked_day AS float8)), 0)
+		FROM task_logs
+		WHERE 
+			created_by_user_id = $1 AND 
+			CAST(worked_date AS DATE) = $2 AND
+			($3 = 0 OR id != $3)
+	`
+	var taskLogsTotal float64
+	err := database.Pool.QueryRow(ctx, query, userID, dateStr, excludeLogID).Scan(&taskLogsTotal)
+	if err != nil {
+		return fmt.Errorf("error querying task logs: %w", err)
+	}
+
+	// Query leave logs for this date and user
+	leaveQuery := `
+		SELECT COUNT(*)
+		FROM leave_logs
+		WHERE 
+			user_id = $1 AND 
+			CAST(date AS DATE) = $2
+	`
+	var leaveLogsCount int
+	err = database.Pool.QueryRow(ctx, leaveQuery, userID, dateStr).Scan(&leaveLogsCount)
+	if err != nil {
+		return fmt.Errorf("error querying leave logs: %w", err)
+	}
+
+	// Each leave log counts as 1 day
+	leaveLogsTotal := float64(leaveLogsCount)
+
+	// Calculate total time
+	totalTime := taskLogsTotal + leaveLogsTotal + workedDay
+
+	// If total exceeds 1 day, return an error
+	if totalTime > 1.0 {
+		return fmt.Errorf("total time logged for this date would exceed 1 day (current: %.2f + new: %.2f = %.2f)",
+			taskLogsTotal+leaveLogsTotal, workedDay, totalTime)
+	}
+
+	return nil
 }
 
 func getTaskLogs(w http.ResponseWriter, r *http.Request) {
@@ -208,6 +259,20 @@ func createTaskLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse date from string (yyyy-MM-dd format)
+	workedDate, err := time.Parse("2006-01-02", req.WorkedDate)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid date format. Expected yyyy-MM-dd")
+		return
+	}
+
+	// Validate time limit for the day
+	err = validateDayLimit(ctx, currentUser.ID, workedDate, req.WorkedDay, 0)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Check if task exists
 	_, err = database.GetTask(ctx, req.TaskID)
 	if err != nil {
@@ -225,7 +290,7 @@ func createTaskLog(w http.ResponseWriter, r *http.Request) {
 		TaskID:          req.TaskID,
 		WorkedDay:       workedDay,
 		CreatedByUserID: currentUser.ID,
-		WorkedDate:      pgtype.Date{Time: req.WorkedDate, Valid: !req.WorkedDate.IsZero()},
+		WorkedDate:      pgtype.Date{Time: workedDate, Valid: true},
 		IsWorkOnHoliday: pgtype.Bool{Bool: req.IsWorkOnHoliday, Valid: true},
 	}
 
@@ -243,9 +308,9 @@ func createTaskLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if worked date is valid
-	var workedDate time.Time
+	var responseWorkedDate time.Time
 	if log.WorkedDate.Valid {
-		workedDate = log.WorkedDate.Time.UTC()
+		responseWorkedDate = log.WorkedDate.Time.UTC()
 	}
 
 	// Check if holiday flag is valid
@@ -259,11 +324,14 @@ func createTaskLog(w http.ResponseWriter, r *http.Request) {
 		TaskID:          log.TaskID,
 		WorkedDay:       workedDayFloat,
 		CreatedByUserID: log.CreatedByUserID,
-		WorkedDate:      workedDate,
+		WorkedDate:      responseWorkedDate,
 		IsWorkOnHoliday: isWorkOnHoliday,
 		CreatedAt:       log.CreatedAt,
 		Username:        currentUser.Username,
 	}
+
+	// Add sync function to call after changes
+	syncTaskLogUser(ctx, currentUser.ID, workedDate)
 
 	respondWithJSON(w, http.StatusCreated, response)
 }
@@ -309,6 +377,20 @@ func updateTaskLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse date from string (yyyy-MM-dd format)
+	workedDate, err := time.Parse("2006-01-02", req.WorkedDate)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid date format. Expected yyyy-MM-dd")
+		return
+	}
+
+	// Validate time limit for the day (excluding current log)
+	err = validateDayLimit(ctx, currentUser.ID, workedDate, req.WorkedDay, int32(id))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Prepare numeric value
 	workedDay := pgtype.Numeric{}
 	workedDay.Valid = true
@@ -318,7 +400,7 @@ func updateTaskLog(w http.ResponseWriter, r *http.Request) {
 	params := sqlc.UpdateTaskLogParams{
 		ID:              int32(id),
 		WorkedDay:       workedDay,
-		WorkedDate:      pgtype.Date{Time: req.WorkedDate, Valid: !req.WorkedDate.IsZero()},
+		WorkedDate:      pgtype.Date{Time: workedDate, Valid: true},
 		IsWorkOnHoliday: pgtype.Bool{Bool: req.IsWorkOnHoliday, Valid: true},
 	}
 
@@ -336,9 +418,9 @@ func updateTaskLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if worked date is valid
-	var workedDate time.Time
+	var responseWorkedDate time.Time
 	if log.WorkedDate.Valid {
-		workedDate = log.WorkedDate.Time.UTC()
+		responseWorkedDate = log.WorkedDate.Time.UTC()
 	}
 
 	// Check if holiday flag is valid
@@ -347,12 +429,15 @@ func updateTaskLog(w http.ResponseWriter, r *http.Request) {
 		isWorkOnHoliday = log.IsWorkOnHoliday.Bool
 	}
 
+	// Add sync function to call after changes
+	syncTaskLogUser(ctx, currentUser.ID, workedDate)
+
 	response := TaskLogResponse{
 		ID:              log.ID,
 		TaskID:          log.TaskID,
 		WorkedDay:       workedDayFloat,
 		CreatedByUserID: log.CreatedByUserID,
-		WorkedDate:      workedDate,
+		WorkedDate:      responseWorkedDate,
 		IsWorkOnHoliday: isWorkOnHoliday,
 		CreatedAt:       log.CreatedAt,
 		Username:        currentUser.Username,
@@ -394,6 +479,9 @@ func deleteTaskLog(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Error deleting task log: "+err.Error())
 		return
 	}
+
+	// Add sync function to call after changes
+	syncTaskLogUser(ctx, currentUser.ID, time.Now())
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"result": "success"})
 }
@@ -484,14 +572,18 @@ func getTaskLogsByDateRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("getTaskLogsByDateRange called with start_date=%s, end_date=%s", startDateParam, endDateParam)
+
 	startDate, err := time.Parse("2006-01-02", startDateParam)
 	if err != nil {
+		log.Printf("Invalid start date format: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid start date format (should be YYYY-MM-DD)")
 		return
 	}
 
 	endDate, err := time.Parse("2006-01-02", endDateParam)
 	if err != nil {
+		log.Printf("Invalid end date format: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid end date format (should be YYYY-MM-DD)")
 		return
 	}
@@ -499,9 +591,12 @@ func getTaskLogsByDateRange(w http.ResponseWriter, r *http.Request) {
 	// Get user from request
 	currentUser, err := getCurrentUserFromRequest(r)
 	if err != nil {
+		log.Printf("Unauthorized request: %v", err)
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
+
+	log.Printf("Fetching logs for user ID %d between %s and %s", currentUser.ID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 
 	// Get task logs by date range for current user
 	logs, err := database.ListTaskLogsByUserAndDateRange(ctx, sqlc.ListTaskLogsByUserAndDateRangeParams{
@@ -510,9 +605,12 @@ func getTaskLogsByDateRange(w http.ResponseWriter, r *http.Request) {
 		WorkedDate_2:    pgtype.Date{Time: endDate, Valid: true},
 	})
 	if err != nil {
+		log.Printf("Error fetching task logs: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error fetching task logs: "+err.Error())
 		return
 	}
+
+	log.Printf("Found %d logs for date range", len(logs))
 
 	// Convert to response format with task titles
 	response := make([]TaskLogResponse, 0, len(logs))
@@ -556,5 +654,24 @@ func getTaskLogsByDateRange(w http.ResponseWriter, r *http.Request) {
 		response = append(response, resp)
 	}
 
+	// Add sync function to call after changes
+	syncTaskLogUser(ctx, currentUser.ID, time.Now())
+
 	respondWithJSON(w, http.StatusOK, response)
+}
+
+// Add sync function to call after changes
+func syncTaskLogUser(ctx context.Context, userID int32, taskDate time.Time) {
+	year := time.Now().Year()
+	if taskDate.Year() > 0 {
+		year = taskDate.Year()
+	}
+
+	syncService := NewAnnualRecordSyncService(database)
+	_, err := syncService.SyncUserRecordForYear(ctx, userID, int32(year))
+	if err != nil {
+		log.Printf("Warning: Failed to sync annual record for task log: %v", err)
+	} else {
+		log.Printf("Successfully synced annual record for user %d, year %d after task log change", userID, year)
+	}
 }

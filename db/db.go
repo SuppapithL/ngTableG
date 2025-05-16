@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
-	"github.com/tonk/pkeng-tableg/db/sqlc"
+	"github.com/kengtableg/pkeng-tableg/db/sqlc"
 )
 
 // DB represents the database connection pool

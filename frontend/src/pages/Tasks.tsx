@@ -49,7 +49,9 @@ import {
 } from '../api';
 import taskEstimateService from '../api/taskEstimateService';
 import { useNavigate } from 'react-router-dom';
-import TaskProgressBar from '../components/TaskProgressBar';
+import { TaskProgressBar } from '../components/Task';
+import { TASK_STATUSES, TASK_STATUS_COLORS, DEFAULT_TASK_VALUES } from '../constants/taskConstants';
+import { isLightColor } from '../utils/colorUtils';
 
 const TasksPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -58,13 +60,13 @@ const TasksPage: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [formData, setFormData] = useState<any>({
-    title: '',
+    title: DEFAULT_TASK_VALUES.TITLE,
     task_category_id: '',
-    note: '',
-    status: 'To Do',
-    status_color: '#cccccc',
+    note: DEFAULT_TASK_VALUES.NOTE,
+    status: DEFAULT_TASK_VALUES.STATUS,
+    status_color: DEFAULT_TASK_VALUES.STATUS_COLOR,
     clickup_list_id: '',
-    estimate_day: 1
+    estimate_day: DEFAULT_TASK_VALUES.ESTIMATE_DAY
   });
   const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
@@ -80,10 +82,15 @@ const TasksPage: React.FC = () => {
     try {
       const data = await taskService.getAllTasks();
       setTasks(data);
+      
+      // Add a small delay to ensure task estimates are loaded
+      setTimeout(() => {
+        setLoading(false);
+      }, 200);
     } catch (error) {
       console.error('Error fetching tasks:', error);
       enqueueSnackbar('Failed to load tasks', { variant: 'error' });
-    } finally {
+      // Set loading to false immediately in case of error
       setLoading(false);
     }
   };
@@ -103,10 +110,15 @@ const TasksPage: React.FC = () => {
     try {
       const data = await taskService.getTasksByCategory(categoryId);
       setTasks(data);
+      
+      // Add a small delay to ensure task estimates are loaded
+      setTimeout(() => {
+        setLoading(false);
+      }, 200);
     } catch (error) {
       console.error('Error fetching tasks by category:', error);
       enqueueSnackbar('Failed to load tasks for this category', { variant: 'error' });
-    } finally {
+      // Set loading to false immediately in case of error
       setLoading(false);
     }
   };
@@ -125,24 +137,24 @@ const TasksPage: React.FC = () => {
       // Edit existing task
       setCurrentTask(task);
       setFormData({
-        title: task.title || '',
+        title: task.title || DEFAULT_TASK_VALUES.TITLE,
         task_category_id: task.task_category_id || '',
-        note: task.note || '',
-        status: task.status || 'To Do',
-        status_color: task.status_color || '#cccccc',
+        note: task.note || DEFAULT_TASK_VALUES.NOTE,
+        status: task.status || DEFAULT_TASK_VALUES.STATUS,
+        status_color: task.status_color || DEFAULT_TASK_VALUES.STATUS_COLOR,
         estimate_day: 1 // Use a default value for edit mode
       });
     } else {
       // Create new task
       setCurrentTask(null);
       setFormData({
-        title: '',
+        title: DEFAULT_TASK_VALUES.TITLE,
         task_category_id: '',
-        note: '',
-        status: 'To Do',
-        status_color: '#cccccc',
+        note: DEFAULT_TASK_VALUES.NOTE,
+        status: DEFAULT_TASK_VALUES.STATUS,
+        status_color: DEFAULT_TASK_VALUES.STATUS_COLOR,
         clickup_list_id: '',
-        estimate_day: 1
+        estimate_day: DEFAULT_TASK_VALUES.ESTIMATE_DAY
       });
     }
     setDialogOpen(true);
@@ -156,10 +168,18 @@ const TasksPage: React.FC = () => {
     const name = e.target.name as string;
     const value = e.target.value;
     
-    setFormData({
-      ...formData,
-      [name]: value
-    });
+    // Convert estimate_day to a number
+    if (name === 'estimate_day') {
+      setFormData({
+        ...formData,
+        [name]: parseFloat(value as string) || 0
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value
+      });
+    }
   };
 
   // New handler for Select components
@@ -181,6 +201,7 @@ const TasksPage: React.FC = () => {
       }
 
       console.log('Submitting task data:', formData);
+      console.log('Estimate day value:', formData.estimate_day, typeof formData.estimate_day);
 
       if (currentTask) {
         // Update existing task
@@ -193,21 +214,7 @@ const TasksPage: React.FC = () => {
         console.log('Task created successfully:', newTask);
         enqueueSnackbar('Task created successfully', { variant: 'success' });
         
-        // Create an initial task estimate if one was provided
-        if (formData.estimate_day > 0) {
-          try {
-            const estimateData = {
-              task_id: newTask.id,
-              estimate_day: formData.estimate_day,
-              note: 'Initial estimate'
-            };
-            await taskEstimateService.createTaskEstimate(estimateData);
-            console.log('Initial estimate created');
-          } catch (error) {
-            console.error('Error creating initial estimate:', error);
-            enqueueSnackbar('Task created but failed to create initial estimate', { variant: 'warning' });
-          }
-        }
+        // The estimate is now created automatically in the taskService.createTask method
       }
       
       handleCloseDialog();
@@ -266,19 +273,6 @@ const TasksPage: React.FC = () => {
         }} 
       />
     );
-  };
-
-  // Helper function to determine if a color is light or dark
-  const isLightColor = (color: string) => {
-    // Default to dark if no color
-    if (!color) return false;
-    
-    const hex = color.replace('#', '');
-    const r = parseInt(hex.substr(0, 2), 16);
-    const g = parseInt(hex.substr(2, 2), 16);
-    const b = parseInt(hex.substr(4, 2), 16);
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-    return brightness > 155;
   };
 
   return (
@@ -428,69 +422,69 @@ const TasksPage: React.FC = () => {
               </Box>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                 <Box sx={{ flexGrow: 1, minWidth: '240px' }}>
-                  <FormControl fullWidth>
-                    <InputLabel>Category</InputLabel>
-                    <Select
-                      name="task_category_id"
-                      value={formData.task_category_id || ''}
-                      onChange={handleSelectChange}
-                      label="Category"
-                    >
-                      <MenuItem value="">None</MenuItem>
-                      {categories.map(category => (
-                        <MenuItem key={category.id} value={category.id}>
-                          {category.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel>Category</InputLabel>
+                  <Select
+                    name="task_category_id"
+                    value={formData.task_category_id || ''}
+                    onChange={handleSelectChange}
+                    label="Category"
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {categories.map(category => (
+                      <MenuItem key={category.id} value={category.id}>
+                        {category.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
                 </Box>
                 <Box sx={{ flexGrow: 1, minWidth: '240px' }}>
-                  <FormControl fullWidth>
-                    <InputLabel>Status</InputLabel>
-                    <Select
-                      name="status"
-                      value={formData.status || ''}
-                      onChange={handleSelectChange}
-                      label="Status"
-                    >
-                      <MenuItem value="To Do">To Do</MenuItem>
-                      <MenuItem value="In Progress">In Progress</MenuItem>
-                      <MenuItem value="In Review">In Review</MenuItem>
-                      <MenuItem value="Done">Done</MenuItem>
-                    </Select>
-                  </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    name="status"
+                    value={formData.status || ''}
+                    onChange={handleSelectChange}
+                    label="Status"
+                  >
+                    <MenuItem value={TASK_STATUSES.TODO}>To Do</MenuItem>
+                    <MenuItem value={TASK_STATUSES.IN_PROGRESS}>In Progress</MenuItem>
+                    <MenuItem value={TASK_STATUSES.IN_REVIEW}>In Review</MenuItem>
+                    <MenuItem value={TASK_STATUSES.DONE}>Done</MenuItem>
+                  </Select>
+                </FormControl>
                 </Box>
                 <Box sx={{ flexGrow: 1, minWidth: '240px' }}>
-                  <FormControl fullWidth>
-                    <InputLabel>Status Color</InputLabel>
-                    <Select
-                      name="status_color"
-                      value={formData.status_color || '#cccccc'}
-                      onChange={handleSelectChange}
-                      label="Status Color"
-                    >
-                      <MenuItem value="#cccccc">Default Gray</MenuItem>
-                      <MenuItem value="#4ade80">Green</MenuItem>
-                      <MenuItem value="#fb923c">Orange</MenuItem>
-                      <MenuItem value="#60a5fa">Blue</MenuItem>
-                      <MenuItem value="#f87171">Red</MenuItem>
-                      <MenuItem value="#a78bfa">Purple</MenuItem>
-                    </Select>
-                  </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel>Status Color</InputLabel>
+                  <Select
+                    name="status_color"
+                    value={formData.status_color || '#cccccc'}
+                    onChange={handleSelectChange}
+                    label="Status Color"
+                  >
+                    <MenuItem value={TASK_STATUS_COLORS.DEFAULT}>Default Gray</MenuItem>
+                    <MenuItem value={TASK_STATUS_COLORS.GREEN}>Green</MenuItem>
+                    <MenuItem value={TASK_STATUS_COLORS.ORANGE}>Orange</MenuItem>
+                    <MenuItem value={TASK_STATUS_COLORS.BLUE}>Blue</MenuItem>
+                    <MenuItem value={TASK_STATUS_COLORS.RED}>Red</MenuItem>
+                    <MenuItem value={TASK_STATUS_COLORS.PURPLE}>Purple</MenuItem>
+                  </Select>
+                </FormControl>
                 </Box>
-                {!currentTask && (
+              {!currentTask && (
                   <Box sx={{ flexGrow: 1, minWidth: '240px' }}>
-                    <TextField
-                      name="clickup_list_id"
-                      label="ClickUp List ID (optional)"
-                      value={formData.clickup_list_id || ''}
-                      onChange={handleInputChange}
-                      fullWidth
-                      helperText="If provided, a task will be created in ClickUp"
-                    />
+                  <TextField
+                    name="clickup_list_id"
+                    label="ClickUp List ID (optional)"
+                    value={formData.clickup_list_id || ''}
+                    onChange={handleInputChange}
+                    fullWidth
+                    helperText="If provided, a task will be created in ClickUp"
+                  />
                   </Box>
-                )}
+              )}
                 <Box sx={{ flexGrow: 1, minWidth: '240px' }}>
                   <TextField
                     name="estimate_day"

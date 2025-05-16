@@ -1,79 +1,92 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { SnackbarProvider } from 'notistack';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { CssBaseline, ThemeProvider } from '@mui/material';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import theme from './theme';
 
 // Pages
-import Login from './pages/Login';
+import LoginPage from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import AnnualRecords from './pages/AnnualRecords';
-import MedicalExpenses from './pages/MedicalExpenses';
-import LeaveLogs from './pages/LeaveLogs';
-import Holidays from './pages/Holidays';
-import QuotaPlans from './pages/QuotaPlans';
-import NotFound from './pages/NotFound';
-import TaskCategories from './pages/TaskCategories';
-import Tasks from './pages/Tasks';
-import Users from './pages/Users';
-import YearTransition from './pages/YearTransition';
-import ClickUpAuth from './pages/ClickUpAuth';
-import OAuthCallback from './pages/OAuthCallback';
+import UsersPage from './pages/Users';
+import HolidaysPage from './pages/Holidays';
+import AnnualRecordsPage from './pages/AnnualRecords';
+import MedicalExpensesPage from './pages/MedicalExpenses';
+import LeaveLogsPage from './pages/LeaveLogs';
+import AdminQuotaManagementPage from './pages/AdminQuotaManagement';
+import YearTransitionPage from './pages/YearTransition';
+import TaskCategoriesPage from './pages/TaskCategories';
+import TasksPage from './pages/Tasks';
 import TaskEstimatesPage from './pages/TaskEstimatesPage';
+import ClickUpAuthPage from './pages/ClickUpAuth';
+import OAuthCallbackPage from './pages/OAuthCallback';
+import NotFoundPage from './pages/NotFound';
 
-// Contexts
-import { AuthProvider } from './contexts/AuthContext';
-import PrivateRoute from './components/Layout/PrivateRoute';
-
-// Create a theme instance
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-    background: {
-      default: '#f5f5f5',
-    },
-  },
-  typography: {
-    fontFamily: [
-      'Roboto',
-      'Arial',
-      'sans-serif',
-    ].join(','),
-  },
-});
+// Private route wrapper component
+const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+  
+  // Waiting for auth state to load
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+  
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+};
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
       <CssBaseline />
-      <SnackbarProvider maxSnack={3} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <AuthProvider>
           <Router>
             <Routes>
-              <Route path="/login" element={<Login />} />
+              <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-              <Route path="/annual-records" element={<PrivateRoute><AnnualRecords /></PrivateRoute>} />
-              <Route path="/medical-expenses" element={<PrivateRoute><MedicalExpenses /></PrivateRoute>} />
-              <Route path="/leave-logs" element={<PrivateRoute><LeaveLogs /></PrivateRoute>} />
-              <Route path="/holidays" element={<PrivateRoute><Holidays /></PrivateRoute>} />
-              <Route path="/quota-plans" element={<PrivateRoute><QuotaPlans /></PrivateRoute>} />
-              <Route path="/task-categories" element={<PrivateRoute><TaskCategories /></PrivateRoute>} />
-              <Route path="/tasks" element={<PrivateRoute><Tasks /></PrivateRoute>} />
-              <Route path="/tasks/:taskId/estimates" element={<PrivateRoute><TaskEstimatesPage /></PrivateRoute>} />
-              <Route path="/users" element={<PrivateRoute><Users /></PrivateRoute>} />
-              <Route path="/year-transition" element={<PrivateRoute><YearTransition /></PrivateRoute>} />
-              <Route path="/clickup-auth" element={<PrivateRoute><ClickUpAuth /></PrivateRoute>} />
-              <Route path="/oauth/callback" element={<PrivateRoute><OAuthCallback /></PrivateRoute>} />
-              <Route path="*" element={<NotFound />} />
+              
+              {/* User Management */}
+              <Route path="/users" element={<PrivateRoute><UsersPage /></PrivateRoute>} />
+              
+              {/* Holidays */}
+              <Route path="/holidays" element={<PrivateRoute><HolidaysPage /></PrivateRoute>} />
+              
+              {/* Annual Records */}
+              <Route path="/annual-records" element={<PrivateRoute><AnnualRecordsPage /></PrivateRoute>} />
+              
+              {/* Medical Expenses */}
+              <Route path="/medical-expenses" element={<PrivateRoute><MedicalExpensesPage /></PrivateRoute>} />
+              
+              {/* Leave Logs */}
+              <Route path="/leave-logs" element={<PrivateRoute><LeaveLogsPage /></PrivateRoute>} />
+              
+              {/* Quota Management */}
+              <Route path="/quota-management" element={<PrivateRoute><AdminQuotaManagementPage /></PrivateRoute>} />
+              <Route path="/quota-plans" element={<PrivateRoute><AdminQuotaManagementPage /></PrivateRoute>} />
+              
+              {/* Year Transition */}
+              <Route path="/year-transition" element={<PrivateRoute><YearTransitionPage /></PrivateRoute>} />
+              
+              {/* Task Categories */}
+              <Route path="/task-categories" element={<PrivateRoute><TaskCategoriesPage /></PrivateRoute>} />
+              
+              {/* Tasks */}
+              <Route path="/tasks" element={<PrivateRoute><TasksPage /></PrivateRoute>} />
+              <Route path="/tasks/:id/details" element={<PrivateRoute><TaskEstimatesPage /></PrivateRoute>} />
+              
+              {/* ClickUp Integration */}
+              <Route path="/clickup-integration" element={<PrivateRoute><ClickUpAuthPage /></PrivateRoute>} />
+              <Route path="/clickup-auth" element={<PrivateRoute><ClickUpAuthPage /></PrivateRoute>} />
+              <Route path="/oauth/callback" element={<PrivateRoute><OAuthCallbackPage /></PrivateRoute>} />
+              
+              {/* Redirect any unknown routes to 404 */}
+              <Route path="/404" element={<NotFoundPage />} />
+              <Route path="*" element={<Navigate to="/404" replace />} />
             </Routes>
           </Router>
         </AuthProvider>
-      </SnackbarProvider>
+      </LocalizationProvider>
     </ThemeProvider>
   );
 }

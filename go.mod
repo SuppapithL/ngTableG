@@ -1,4 +1,4 @@
-module github.com/tonk/pkeng-tableg
+module github.com/kengtableg/pkeng-tableg
 
 go 1.24.1
 

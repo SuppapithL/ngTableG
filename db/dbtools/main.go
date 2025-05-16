@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/tonk/pkeng-tableg/db"
-	"github.com/tonk/pkeng-tableg/db/sqlc"
+	"github.com/kengtableg/pkeng-tableg/db"
+	"github.com/kengtableg/pkeng-tableg/db/sqlc"
 )
 
 func main() {
@@ -172,6 +172,13 @@ func createDefaultQuotas() {
 	years := []int{currentYear, currentYear + 1}
 
 	for _, year := range years {
+		// Check if plans already exist for this year
+		plans, err := database.ListQuotaPlansByYear(ctx, int32(year))
+		if err == nil && len(plans) > 0 {
+			fmt.Printf("Quota plans for year %d already exist. Skipping creation.\n", year)
+			continue
+		}
+
 		// Helper function to create Numeric from float
 		createNumeric := func(val float64) pgtype.Numeric {
 			var num pgtype.Numeric
@@ -257,7 +264,7 @@ func createDefaultQuotas() {
 			id, planName, year, vacationDays, medicalExpense)
 	}
 
-	// Assign default quota plans to annual records
+	// Assign default quota plans to annual records with NULL quota_plan_id
 	result, err := database.Pool.Exec(ctx, `
 		UPDATE annual_records ar
 		SET quota_plan_id = qp.id

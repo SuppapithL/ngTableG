@@ -27,23 +27,28 @@ import {
   Tab,
   Chip,
   SelectChangeEvent,
-  Grid
+  Grid,
+  Snackbar
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Visibility as ViewIcon
+  Visibility as ViewIcon,
+  FilterList as FilterIcon
 } from '@mui/icons-material';
-import MainLayout from '../components/Layout';
-import { userService, medicalExpenseService } from '../api';
-import { MedicalExpense, CreateMedicalExpenseRequest, UpdateMedicalExpenseRequest } from '../api/medicalExpenseService';
+import MainLayout from '../components/Layout/MainLayout';
+import { userService, medicalExpenseService, annualRecordService, quotaPlanService } from '../api';
+import { MedicalExpense, MedicalExpenseResponse, CreateMedicalExpenseRequest, UpdateMedicalExpenseRequest } from '../api/medicalExpenseService';
 import { User } from '../api/userService';
 import { useAuth } from '../contexts/AuthContext';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format, parseISO } from 'date-fns';
+import { AnnualRecord } from '../api/annualRecordService';
+import { QuotaPlan } from '../api/quotaPlanService';
+import { validateMedicalExpense } from '../utils/budgetUtils';
 
 // Helper function to format currency
 const formatCurrency = (amount: number) => {
@@ -91,12 +96,22 @@ const MedicalExpenses: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.user_type === 'admin';
   
+  // Define the form data interface
+  interface MedicalExpenseFormData {
+    user_id: number;
+    amount: number | string;
+    receipt_name: string;
+    receipt_date: string;
+    note: string;
+  }
+  
   // State for data
   const [expenses, setExpenses] = useState<MedicalExpense[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [openSnackbar, setOpenSnackbar] = useState<boolean>(false);
+  const [snackbarMessage, setSnackbarMessage] = useState<string>('');
   
   // State for filtering
   const [selectedUserId, setSelectedUserId] = useState<number>(0);
@@ -104,12 +119,12 @@ const MedicalExpenses: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   
   // State for dialog
-  const [openDialog, setOpenDialog] = useState(false);
-  const [viewMode, setViewMode] = useState(false);
+  const [openDialog, setOpenDialog] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<boolean>(false);
   const [currentExpense, setCurrentExpense] = useState<MedicalExpense | null>(null);
   
   // State for form
-  const initialFormState: CreateMedicalExpenseRequest = {
+  const initialFormState: MedicalExpenseFormData = {
     user_id: user?.id || 0,
     amount: 0,
     receipt_name: '',
@@ -117,7 +132,7 @@ const MedicalExpenses: React.FC = () => {
     note: ''
   };
   
-  const [formData, setFormData] = useState<CreateMedicalExpenseRequest | UpdateMedicalExpenseRequest>(initialFormState);
+  const [formData, setFormData] = useState<MedicalExpenseFormData>(initialFormState);
   
   // Stats for summary
   const [totalExpenseAmount, setTotalExpenseAmount] = useState(0);
@@ -126,6 +141,8 @@ const MedicalExpenses: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     setError('');
+    
+    console.log('------ Starting fetchData for MedicalExpenses component ------');
     
     try {
       // Load users for admin view
@@ -147,26 +164,73 @@ const MedicalExpenses: React.FC = () => {
       let expensesData: MedicalExpense[] = [];
       
       try {
-        if (isAdmin && selectedUserId > 0) {
-          // Admin viewing a specific user's expenses
-          expensesData = await medicalExpenseService.getAllMedicalExpenses(
-            selectedUserId,
-            selectedYear > 0 ? selectedYear : undefined
-          );
-        } else if (isAdmin) {
-          // Admin viewing all expenses
-          expensesData = await medicalExpenseService.getAllMedicalExpenses(
-            undefined,
-            selectedYear > 0 ? selectedYear : undefined
-          );
-        } else {
-          // Regular user viewing their own expenses
-          expensesData = await medicalExpenseService.getCurrentUserMedicalExpenses(
-            selectedYear > 0 ? selectedYear : undefined
-          );
+        console.log('Fetching medical expenses with params:', {
+          isAdmin,
+          selectedUserId,
+          selectedYear
+        });
+        
+        // For now, just use the getCurrentUserMedicalExpenses endpoint 
+        // Increase limit to make sure we get all records
+        const rawData = await medicalExpenseService.getCurrentUserMedicalExpenses(
+          selectedYear > 0 ? selectedYear : undefined,
+          100,  // Increased limit
+          0
+        );
+        
+        console.log('Fetched medical expenses data (raw):', rawData);
+        
+        // Map the data to match our frontend model
+        // The backend uses camelCase for JSON field names, but our frontend model uses snake_case
+        expensesData = rawData.map(item => {
+          const expense: MedicalExpense = {
+            id: item.id,
+            user_id: item.userId,
+            amount: typeof item.amount === 'number' 
+              ? item.amount 
+              : (item.amount && typeof item.amount === 'object' 
+                ? parseFloat(item.amount.toString() || '0') 
+                : 0),
+            receipt_name: typeof item.receiptName === 'string'
+              ? item.receiptName
+              : (item.receiptName && typeof item.receiptName === 'object' && 'string' in item.receiptName
+                ? (item.receiptName.string || '')
+                : ''),
+            receipt_date: typeof item.receiptDate === 'string'
+              ? item.receiptDate
+              : (item.receiptDate && typeof item.receiptDate === 'object' && 'time' in item.receiptDate
+                ? (item.receiptDate.time ? item.receiptDate.time.split('T')[0] : '')
+                : ''),
+            note: typeof item.note === 'string'
+              ? item.note
+              : (item.note && typeof item.note === 'object' && 'string' in item.note
+                ? (item.note.string || '')
+                : ''),
+            created_at: typeof item.createdAt === 'string'
+              ? item.createdAt
+              : new Date().toISOString()
+          };
+          return expense;
+        });
+        
+        console.log('Fetched medical expenses data (mapped):', {
+          count: expensesData.length,
+          sample: expensesData.length > 0 ? expensesData[0] : 'No data'
+        });
+        
+        // Validate and check format
+        if (expensesData.length > 0) {
+          const sampleExpense = expensesData[0];
+          console.log('Medical expense field check:', {
+            hasId: 'id' in sampleExpense,
+            hasUserId: 'user_id' in sampleExpense,
+            hasAmount: 'amount' in sampleExpense,
+            hasReceiptName: 'receipt_name' in sampleExpense
+          });
         }
       } catch (expenseError) {
         console.error('Error fetching expenses:', expenseError);
+        setError('Failed to fetch medical expenses. Please try again.');
       }
       
       // Validate and process the expenses data
@@ -178,29 +242,23 @@ const MedicalExpenses: React.FC = () => {
           exp.id !== undefined && 
           exp.user_id !== undefined
         );
+        
+        setExpenses(expensesData);
+        
+        // Calculate statistics
+        calculateStatistics(expensesData);
       } else {
         console.warn('Received non-array expense data');
-        expensesData = [];
+        setExpenses([]);
+        setTotalExpenseAmount(0);
+        setYearlyExpenseAmount(0);
       }
-      
-      // If no data is returned, use demo data
-      if (expensesData.length === 0) {
-        expensesData = getDemoData();
-      }
-      
-      setExpenses(expensesData);
-      
-      // Calculate statistics
-      calculateStatistics(expensesData);
-      
     } catch (err: any) {
       console.error('Error fetching data:', err);
       setError('Failed to load data. Please try again.');
-      
-      // If an error occurs, use demo data
-      const demoData = getDemoData();
-      setExpenses(demoData);
-      calculateStatistics(demoData);
+      setExpenses([]);
+      setTotalExpenseAmount(0);
+      setYearlyExpenseAmount(0);
     } finally {
       setLoading(false);
     }
@@ -224,43 +282,6 @@ const MedicalExpenses: React.FC = () => {
     }
   };
   
-  // Add demo data with more flexibility
-  const getDemoData = (): MedicalExpense[] => {
-    const currentYear = new Date().getFullYear();
-    // Use the current user's ID if available, or default to user ID 1
-    const currentUserId = user?.id || 1;
-    
-    return [
-      {
-        id: 1,
-        user_id: currentUserId,
-        amount: 3500,
-        receipt_name: "Hospital Visit",
-        receipt_date: `${currentYear}-01-15`,
-        note: "Regular checkup",
-        created_at: `${currentYear}-01-15T10:00:00Z`
-      },
-      {
-        id: 2,
-        user_id: currentUserId,
-        amount: 1200,
-        receipt_name: "Pharmacy",
-        receipt_date: `${currentYear}-02-22`,
-        note: "Prescription medication",
-        created_at: `${currentYear}-02-22T14:30:00Z`
-      },
-      {
-        id: 3,
-        user_id: currentUserId,
-        amount: 2800,
-        receipt_name: "Dental Care",
-        receipt_date: `${currentYear}-04-10`,
-        note: "Tooth filling",
-        created_at: `${currentYear}-04-10T09:15:00Z`
-      }
-    ];
-  };
-  
   useEffect(() => {
     fetchData();
   }, [selectedUserId, selectedYear]);
@@ -273,17 +294,20 @@ const MedicalExpenses: React.FC = () => {
     setViewMode(isViewOnly);
     
     if (expense) {
+      // Edit existing expense
       setCurrentExpense(expense);
       setFormData({
-        amount: Number(expense.amount),
-        receipt_name: expense.receipt_name || '',
-        receipt_date: expense.receipt_date || format(new Date(), 'yyyy-MM-dd'),
+        user_id: expense.user_id,
+        amount: expense.amount,
+        receipt_name: expense.receipt_name,
+        receipt_date: expense.receipt_date,
         note: expense.note || ''
       });
     } else {
+      // Create new expense
       setCurrentExpense(null);
       setFormData({
-        user_id: isAdmin ? selectedUserId : (user?.id || 0),
+        user_id: user?.id || 0,
         amount: 0,
         receipt_name: '',
         receipt_date: format(new Date(), 'yyyy-MM-dd'),
@@ -303,12 +327,36 @@ const MedicalExpenses: React.FC = () => {
   // Handle form input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>) => {
     const { name, value } = e.target;
+    
     if (!name) return;
     
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    // Handle amount field specially
+    if (name === 'amount') {
+      // Remove non-numeric characters except decimal point
+      let numericValue: string = '';
+      if (typeof value === 'string') {
+        // Allow only numbers and decimal point
+        numericValue = value.replace(/[^0-9.]/g, '');
+        
+        // Ensure we don't have multiple decimal points
+        const parts = numericValue.split('.');
+        if (parts.length > 2) {
+          numericValue = parts[0] + '.' + parts.slice(1).join('');
+        }
+      } else if (value !== null && value !== undefined) {
+        numericValue = String(value).replace(/[^0-9.]/g, '');
+      }
+      
+      setFormData({
+        ...formData,
+        [name]: numericValue
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value
+      });
+    }
   };
   
   // Handle select changes for form fields
@@ -347,26 +395,137 @@ const MedicalExpenses: React.FC = () => {
       setLoading(true);
       setError('');
       
-      if (currentExpense) {
-        // Update existing expense
-        await medicalExpenseService.updateMedicalExpense(
-          currentExpense.id,
-          formData as UpdateMedicalExpenseRequest
-        );
-        setSuccess('Medical expense updated successfully');
-      } else {
-        // Create new expense
-        await medicalExpenseService.createMedicalExpense(
-          formData as CreateMedicalExpenseRequest
-        );
-        setSuccess('Medical expense created successfully');
+      // Ensure amount is a valid number
+      let formDataToSubmit: any = { ...formData };
+      
+      // Parse amount to ensure it's a number
+      if (typeof formDataToSubmit.amount === 'string') {
+        formDataToSubmit.amount = parseFloat(formDataToSubmit.amount.replace(/,/g, ''));
       }
       
-      handleCloseDialog();
-      fetchData();
-    } catch (err: any) {
-      console.error('Error submitting form:', err);
-      setError(err.response?.data?.error || 'Failed to save medical expense');
+      // Validate amount
+      if (isNaN(formDataToSubmit.amount) || formDataToSubmit.amount <= 0) {
+        setError('Please enter a valid amount');
+        setLoading(false);
+        return;
+      }
+      
+      // Validate receipt name
+      if (!formDataToSubmit.receipt_name || formDataToSubmit.receipt_name.trim() === '') {
+        setError('Please enter a receipt name');
+        setLoading(false);
+        return;
+      }
+      
+      // Validate receipt date
+      if (!formDataToSubmit.receipt_date) {
+        setError('Please select a receipt date');
+        setLoading(false);
+        return;
+      }
+      
+      // Fetch current annual record and quota plan to check budget
+      try {
+        // Get the current year from the receipt date
+        const expenseYear = new Date(formDataToSubmit.receipt_date).getFullYear();
+        
+        // First get the annual record for the user
+        const records = await annualRecordService.getCurrentUserAnnualRecords();
+        const currentYearRecord = records.find(record => record.year === expenseYear);
+        
+        if (!currentYearRecord) {
+          setError(`No annual record found for ${expenseYear}. Cannot validate budget.`);
+          setLoading(false);
+          return;
+        }
+        
+        if (!currentYearRecord.quota_plan_id) {
+          setError('No quota plan assigned to your annual record. Please contact an administrator.');
+          setLoading(false);
+          return;
+        }
+        
+        // Get the quota plan
+        const quotaPlan = await quotaPlanService.getQuotaPlanById(currentYearRecord.quota_plan_id);
+        
+        if (!quotaPlan) {
+          setError('Could not find your quota plan. Please contact an administrator.');
+          setLoading(false);
+          return;
+        }
+        
+        // Now validate the expense against the budget
+        const validation = validateMedicalExpense(
+          quotaPlan.quota_medical_expense_baht,
+          currentYearRecord.used_medical_expense_baht,
+          formDataToSubmit.amount
+        );
+        
+        // If validation fails, show an error message and prevent submission
+        if (!validation.isValid) {
+          setError(`Cannot add this expense: ${validation.message}. Your pro-rated remaining budget is ฿${validation.remainingBefore.toFixed(0)}.`);
+          setLoading(false);
+          return;
+        }
+        
+        console.log('Submitting data:', formDataToSubmit);
+        
+        if (currentExpense) {
+          // Update existing expense
+          const updateData: UpdateMedicalExpenseRequest = {
+            amount: formDataToSubmit.amount,
+            receipt_name: formDataToSubmit.receipt_name,
+            receipt_date: formDataToSubmit.receipt_date,
+            note: formDataToSubmit.note || ''
+          };
+          
+          try {
+            const updatedExpense = await medicalExpenseService.updateMedicalExpense(
+              currentExpense.id,
+              updateData
+            );
+            
+            if (updatedExpense) {
+              setSnackbarMessage('Medical expense updated successfully');
+              setOpenSnackbar(true);
+              fetchData();
+            }
+          } catch (error) {
+            console.error('Failed to update medical expense:', error);
+            setError('Failed to update medical expense. Please try again.');
+          }
+        } else {
+          // Create new expense
+          const createData: CreateMedicalExpenseRequest = {
+            user_id: formDataToSubmit.user_id,
+            amount: formDataToSubmit.amount,
+            receipt_name: formDataToSubmit.receipt_name,
+            receipt_date: formDataToSubmit.receipt_date,
+            note: formDataToSubmit.note || ''
+          };
+          
+          try {
+            const newExpense = await medicalExpenseService.createMedicalExpense(createData);
+            
+            if (newExpense) {
+              setSnackbarMessage('Medical expense created successfully');
+              setOpenSnackbar(true);
+              fetchData();
+            }
+          } catch (error) {
+            console.error('Failed to create medical expense:', error);
+            setError('Failed to create medical expense. Please try again.');
+          }
+        }
+        
+        handleCloseDialog();
+      } catch (error) {
+        console.error('Error validating budget:', error);
+        setError('Failed to validate against your budget. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error in handleSubmit:', error);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -381,7 +540,8 @@ const MedicalExpenses: React.FC = () => {
     try {
       setLoading(true);
       await medicalExpenseService.deleteMedicalExpense(id);
-      setSuccess('Medical expense deleted successfully');
+      setSnackbarMessage('Medical expense deleted successfully');
+      setOpenSnackbar(true);
       fetchData();
     } catch (err: any) {
       console.error('Error deleting expense:', err);
@@ -438,11 +598,6 @@ const MedicalExpenses: React.FC = () => {
         {error && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
             {error}
-          </Alert>
-        )}
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
-            {success}
           </Alert>
         )}
         
@@ -524,49 +679,70 @@ const MedicalExpenses: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                expenses.map(expense => (
-                  <TableRow key={expense.id}>
-                    <TableCell>{expense.id}</TableCell>
-                    {isAdmin && (
-                      <TableCell>{getUsernameById(expense.user_id)}</TableCell>
-                    )}
-                    <TableCell>{expense.receipt_name}</TableCell>
-                    <TableCell>{formatCurrency(Number(expense.amount))}</TableCell>
-                    <TableCell>
-                      {formatDate(expense.receipt_date)}
-                    </TableCell>
-                    <TableCell>
-                      {expense.note && expense.note.length > 30
-                        ? `${expense.note.substring(0, 30)}...`
-                        : expense.note}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <IconButton
-                          size="small"
-                          color="primary"
-                          onClick={() => handleOpenDialog(expense, true)}
-                        >
-                          <ViewIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          color="secondary"
-                          onClick={() => handleOpenDialog(expense)}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => handleDelete(expense.id)}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))
+                expenses.map(expense => {
+                  console.log('Rendering expense record:', expense);
+                  
+                  // Safety check to avoid rendering errors
+                  if (!expense || typeof expense !== 'object') {
+                    console.error('Invalid expense object:', expense);
+                    return null;
+                  }
+                  
+                  try {
+                    return (
+                      <TableRow key={expense.id}>
+                        <TableCell>{expense.id}</TableCell>
+                        {isAdmin && (
+                          <TableCell>{getUsernameById(expense.user_id)}</TableCell>
+                        )}
+                        <TableCell>{expense.receipt_name}</TableCell>
+                        <TableCell>{formatCurrency(Number(expense.amount))}</TableCell>
+                        <TableCell>
+                          {formatDate(expense.receipt_date)}
+                        </TableCell>
+                        <TableCell>
+                          {expense.note && expense.note.length > 30
+                            ? `${expense.note.substring(0, 30)}...`
+                            : expense.note}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => handleOpenDialog(expense, true)}
+                            >
+                              <ViewIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="secondary"
+                              onClick={() => handleOpenDialog(expense)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDelete(expense.id)}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  } catch (error) {
+                    console.error('Error rendering expense row:', error, expense);
+                    return (
+                      <TableRow key={expense.id || 'error'}>
+                        <TableCell colSpan={isAdmin ? 7 : 6} align="center">
+                          Error rendering expense data
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                })
               )}
             </TableBody>
           </Table>
@@ -596,98 +772,130 @@ const MedicalExpenses: React.FC = () => {
         </Paper>
         
         {/* Add/Edit Dialog */}
-        <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <Dialog open={openDialog} onClose={handleCloseDialog} fullWidth maxWidth="sm">
           <DialogTitle>
-            {viewMode
-              ? 'View Medical Expense'
-              : currentExpense
-              ? 'Edit Medical Expense'
-              : 'Add New Medical Expense'}
+            {currentExpense ? (viewMode ? 'View' : 'Edit') : 'Add New'} Medical Expense
           </DialogTitle>
-          
           <DialogContent>
-            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {isAdmin && !currentExpense && (
-                <FormControl fullWidth>
-                  <InputLabel id="form-user-select-label">User</InputLabel>
-                  <Select
-                    labelId="form-user-select-label"
-                    id="form-user-select"
-                    name="user_id"
-                    value={(formData as CreateMedicalExpenseRequest).user_id?.toString() || ''}
-                    label="User"
-                    onChange={handleSelectChange}
-                    disabled={viewMode}
-                  >
-                    {users.map(user => (
-                      <MenuItem key={user.id} value={user.id.toString()}>
-                        {user.username}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
-              
-              <TextField
-                label="Receipt Name"
-                name="receipt_name"
-                value={formData.receipt_name}
-                onChange={handleInputChange}
-                fullWidth
+            {isAdmin && !viewMode && (
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="user-select-label">User</InputLabel>
+                <Select
+                  labelId="user-select-label"
+                  id="user-select"
+                  name="user_id"
+                  value={formData.user_id ? formData.user_id.toString() : ''}
+                  onChange={handleSelectChange}
+                  label="User"
+                  disabled={viewMode || !!currentExpense}
+                >
+                  {users.map(user => (
+                    <MenuItem key={user.id} value={user.id.toString()}>
+                      {user.username}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+            
+            <TextField
+              margin="normal"
+              fullWidth
+              id="receipt_name"
+              name="receipt_name"
+              label="Receipt Name"
+              value={formData.receipt_name || ''}
+              onChange={handleInputChange}
+              disabled={viewMode}
+              required
+              error={formData.receipt_name === ''}
+              helperText={formData.receipt_name === '' ? 'Receipt name is required' : ''}
+            />
+            
+            <TextField
+              margin="normal"
+              fullWidth
+              id="amount"
+              name="amount"
+              label="Amount (THB)"
+              type="text"
+              value={formData.amount}
+              onChange={handleInputChange}
+              disabled={viewMode}
+              required
+              error={formData.amount === 0 || formData.amount === '0' || formData.amount === ''}
+              helperText={formData.amount === 0 || formData.amount === '0' || formData.amount === '' ? 'Amount is required' : ''}
+              InputProps={{
+                startAdornment: <span style={{ marginRight: 8 }}>฿</span>,
+              }}
+            />
+            
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="Receipt Date"
+                value={formData.receipt_date ? parseISO(formData.receipt_date as string) : null}
+                onChange={handleDateChange}
                 disabled={viewMode}
-              />
-              
-              <TextField
-                label="Amount (THB)"
-                name="amount"
-                type="number"
-                value={formData.amount}
-                onChange={handleInputChange}
-                fullWidth
-                disabled={viewMode}
-                InputProps={{
-                  startAdornment: <Typography variant="body1">฿</Typography>
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    margin: 'normal',
+                    required: true,
+                    error: !formData.receipt_date,
+                    helperText: !formData.receipt_date ? 'Date is required' : '',
+                  },
                 }}
               />
-              
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DatePicker
-                  label="Receipt Date"
-                  value={formData.receipt_date ? parseISO(formData.receipt_date) : null}
-                  onChange={handleDateChange}
-                  disabled={viewMode}
-                />
-              </LocalizationProvider>
-              
-              <TextField
-                label="Note"
-                name="note"
-                value={formData.note}
-                onChange={handleInputChange}
-                fullWidth
-                multiline
-                rows={3}
-                disabled={viewMode}
-              />
-            </Box>
+            </LocalizationProvider>
+            
+            <TextField
+              margin="normal"
+              fullWidth
+              id="note"
+              name="note"
+              label="Note (Optional)"
+              multiline
+              rows={4}
+              value={formData.note || ''}
+              onChange={handleInputChange}
+              disabled={viewMode}
+            />
           </DialogContent>
-          
           <DialogActions>
-            <Button onClick={handleCloseDialog}>
+            <Button onClick={handleCloseDialog} color="inherit">
               {viewMode ? 'Close' : 'Cancel'}
             </Button>
             {!viewMode && (
-              <Button
-                onClick={handleSubmit}
-                variant="contained"
+              <Button 
+                onClick={handleSubmit} 
+                variant="contained" 
                 color="primary"
-                disabled={loading}
+                disabled={
+                  loading || 
+                  !formData.receipt_name || 
+                  !formData.receipt_date || 
+                  !formData.amount || 
+                  formData.amount === 0 || 
+                  formData.amount === '0'
+                }
               >
-                {loading ? <CircularProgress size={24} /> : 'Save'}
+                {loading ? <CircularProgress size={24} /> : currentExpense ? 'Update' : 'Save'}
               </Button>
             )}
           </DialogActions>
         </Dialog>
+        
+        {/* Snackbar for success messages */}
+        <Snackbar
+          open={openSnackbar}
+          autoHideDuration={6000}
+          onClose={() => setOpenSnackbar(false)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setOpenSnackbar(false)} severity="success">
+            {snackbarMessage}
+          </Alert>
+        </Snackbar>
       </Box>
     </MainLayout>
   );

@@ -12,8 +12,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/tonk/pkeng-tableg/db/sqlc"
-	"github.com/tonk/pkeng-tableg/example/clickup"
+	"github.com/kengtableg/pkeng-tableg/db/sqlc"
+	"github.com/kengtableg/pkeng-tableg/example/clickup"
 )
 
 // TaskResponse is the response format for task data

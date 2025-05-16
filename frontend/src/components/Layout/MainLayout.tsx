@@ -21,15 +21,17 @@ import {
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
-  Person as PersonIcon,
   Event as EventIcon,
   Assignment as AssignmentIcon,
-  LocalHospital as MedicalIcon,
-  ExitToApp as LogoutIcon,
-  AccountCircle,
+  Person as PersonIcon,
   CalendarMonth as CalendarIcon,
   Settings as SettingsIcon,
-  Sick as SickIcon
+  Sick as SickIcon,
+  History as HistoryIcon,
+  AccountCircle,
+  Logout as LogoutIcon,
+  MedicalServices as MedicalIcon,
+  Sync as SyncIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -81,7 +83,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({
   const adminMenuItems = user?.user_type === 'admin' ? [
     { text: 'Users', icon: <PersonIcon />, path: '/users' },
     { text: 'Holidays', icon: <CalendarIcon />, path: '/holidays' },
-    { text: 'Quota Management', icon: <SettingsIcon />, path: '/quota-plans' },
+    { text: 'Quota Management', icon: <SettingsIcon />, path: '/quota-management' },
     { text: 'Year Transition', icon: <CalendarIcon />, path: '/year-transition' },
     { text: 'ClickUp Integration', icon: <SettingsIcon />, path: '/clickup-auth' },
   ] : [];

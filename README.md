@@ -103,4 +103,15 @@ func main() {
 	}
 
 	fmt.Printf("Created user: %+v\n", user)
-} 
+}
+
+## Holiday Auto-Detection
+
+When creating or editing task logs, the system automatically detects if a date is a holiday using the following rules:
+
+1. **Weekend Detection**: Any dates falling on Saturday or Sunday are automatically marked as holidays
+2. **Holiday Table**: Dates defined in the `holidays` database table are considered holidays
+3. **Visual Indicators**: Holiday dates are clearly marked with a red chip showing the reason (Weekend or holiday name)
+4. **Task Logs**: When a task log is created or edited on a holiday date, the "Work on Holiday" flag is automatically set to true
+
+This automatic detection eliminates the need for manual selection and ensures consistent recording of holiday work across the system. Holiday information is stored in the `holidays` table and can be managed through the Holiday Management page. 

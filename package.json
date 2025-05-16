@@ -6,7 +6,7 @@
   "scripts": {
     "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "start:frontend": "cd frontend && npm start",
-    "start:backend": "cd example && go run main.go task_handlers.go task_category_handlers.go task_estimate_handlers.go task_log_handlers.go",
+    "start:backend": "cd example && go run main.go task_handlers.go task_category_handlers.go task_estimate_handlers.go task_log_handlers.go clickup_oauth_handlers.go",
     "install:frontend": "cd frontend && npm install",
     "build:frontend": "cd frontend && npm run build",
     "test:frontend": "cd frontend && npm test"
@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/KengtableG.git"
+    "url": "git+https://github.com/kengtableg/KengtableG.git"
   },
   "keywords": [
     "task-management",

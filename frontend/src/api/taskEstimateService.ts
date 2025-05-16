@@ -72,7 +72,9 @@ const taskEstimateService = {
    * Get all estimates for a specific task
    */
   async getEstimatesForTask(taskId: number): Promise<TaskEstimate[]> {
+    console.log(`Fetching estimates for task ID: ${taskId}`);
     const response = await api.get(`/api/tasks/${taskId}/estimates`);
+    console.log(`Got ${response.data.length} estimates for task ID: ${taskId}`, response.data);
     return response.data;
   }
 };

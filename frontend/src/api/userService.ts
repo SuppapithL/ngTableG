@@ -24,19 +24,19 @@ export interface LoginRequest {
 const userService = {
   // Get all users
   getAllUsers: async (): Promise<User[]> => {
-    const response = await api.get('/users');
+    const response = await api.get('/api/users');
     return response.data;
   },
 
   // Get user by ID
   getUserById: async (id: number): Promise<User> => {
-    const response = await api.get(`/users/${id}`);
+    const response = await api.get(`/api/users/${id}`);
     return response.data;
   },
 
   // Get current user (for authentication)
   getCurrentUser: async (): Promise<User> => {
-    const response = await api.get('/current-user');
+    const response = await api.get('/api/current-user');
     return response.data;
   },
 
@@ -44,7 +44,7 @@ const userService = {
   createUser: async (userData: CreateUserRequest): Promise<User> => {
     try {
       console.log('API createUser called with:', userData);
-      const response = await api.post('/users', userData);
+      const response = await api.post('/api/users', userData);
       console.log('API response:', response.data);
       return response.data;
     } catch (error) {
@@ -55,23 +55,33 @@ const userService = {
 
   // Update user
   updateUser: async (id: number, userData: Partial<User>): Promise<User> => {
-    const response = await api.put(`/users/${id}`, userData);
+    const response = await api.put(`/api/users/${id}`, userData);
     return response.data;
   },
 
   // Delete user
   deleteUser: async (id: number): Promise<void> => {
-    await api.delete(`/users/${id}`);
+    await api.delete(`/api/users/${id}`);
   },
 
   // Login
   login: async (credentials: LoginRequest) => {
-    const response = await api.post('/login', credentials);
-    // Store the token in localStorage
-    if (response.data.token) {
-      localStorage.setItem('auth_token', response.data.token);
+    console.log('Login attempt with:', credentials.username);
+    try {
+      const response = await api.post('/api/login', credentials);
+      console.log('Login response:', response.data);
+      // Store the token in localStorage
+      if (response.data.token) {
+        localStorage.setItem('auth_token', response.data.token);
+        console.log('Auth token stored:', response.data.token);
+      } else {
+        console.warn('No token received in login response');
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
     }
-    return response.data;
   },
 
   // Logout

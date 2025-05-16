@@ -1,48 +1,64 @@
 import axios from 'axios';
 
-// Create axios instance with default config
-const api = axios.create({
-  baseURL: 'http://localhost:8080/api', // Updated to port 8080
+// Create axios instance with default configuration
+const instance = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8080',
+  timeout: 10000, // 10 seconds
   headers: {
-    'Content-Type': 'application/json',
-  },
+    'Content-Type': 'application/json'
+  }
 });
 
-// Request interceptor for adding auth token
-api.interceptors.request.use(
-  (config) => {
+// Add request interceptor to attach auth token to every request
+instance.interceptors.request.use(
+  config => {
     const token = localStorage.getItem('auth_token');
+    console.log(`Preparing ${config.method?.toUpperCase()} request to ${config.baseURL}${config.url}`);
+    
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log(`Adding Authorization header for request to ${config.url}`);
+      config.headers['Authorization'] = `Bearer ${token}`;
+      console.log('Auth token attached to request');
     } else {
-      console.log(`No auth token available for request to ${config.url}`);
+      console.warn('No auth token found for request');
     }
+    
+    // Debug headers
+    console.log('Request headers:', config.headers);
+    if (config.data) {
+      console.log('Request payload:', config.data);
+    }
+    
     return config;
   },
-  (error) => {
-    console.error('Request interceptor error:', error);
+  error => {
+    console.error('Error in axios request interceptor:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for error handling
-api.interceptors.response.use(
-  (response) => {
-    console.log(`Received successful response from ${response.config.url}`);
+// Add response interceptor for better error handling
+instance.interceptors.response.use(
+  response => {
+    console.log(`Response from ${response.config.url}: Status ${response.status}`);
     return response;
   },
-  (error) => {
-    // Handle errors (like 401 unauthorized)
-    console.error('API response error:', error);
-    if (error.response && error.response.status === 401) {
-      console.log('Unauthorized access detected - clearing token');
-      // Redirect to login or refresh token
-      localStorage.removeItem('auth_token');
-      window.location.href = '/login';
+  error => {
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error('Error response data:', error.response.data);
+      console.error('Error response status:', error.response.status);
+      console.error('Error response headers:', error.response.headers);
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received for request:', error.request);
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error('Error setting up request:', error.message);
     }
+    console.error('Axios error config:', error.config);
     return Promise.reject(error);
   }
 );
 
-export default api; 
+export default instance; 

@@ -75,8 +75,13 @@ const TaskEstimatesPage: React.FC = () => {
     try {
       if (taskId) {
         const logs = await taskLogService.getLogsForTask(parseInt(taskId));
-        const total = logs.reduce((sum, log) => sum + parseFloat(log.worked_day.toString()), 0);
-        setTotalWorkedDays(total);
+        const total = logs.reduce((sum, log) => {
+          // Make sure to parse floats properly to avoid rounding errors
+          return sum + parseFloat(log.worked_day.toString());
+        }, 0);
+        
+        // Round to 2 decimal places to avoid floating-point precision issues
+        setTotalWorkedDays(Math.round(total * 100) / 100);
       }
     } catch (error) {
       console.error('Error fetching worked days:', error);
@@ -163,6 +168,20 @@ const TaskEstimatesPage: React.FC = () => {
     const progress = (totalWorkedDays / parseFloat(latestEstimate.estimate_day.toString())) * 100;
     return Math.min(progress, 100); // Cap at 100%
   };
+  
+  // Format progress display for very small values
+  const getProgressDisplay = () => {
+    const progress = calculateProgress();
+    if (totalWorkedDays === 0) return '0%';
+    if (progress < 1) return '< 1%';
+    return `${Math.round(progress)}%`;
+  };
+  
+  // Get proper progress bar value (ensuring visibility for small values)
+  const getProgressBarValue = () => {
+    const progress = calculateProgress();
+    return totalWorkedDays > 0 && progress < 1 ? 1 : progress;
+  };
 
   return (
     <MainLayout title={`Task Estimates - ${task?.title || 'Loading...'}`}>
@@ -202,11 +221,11 @@ const TaskEstimatesPage: React.FC = () => {
                     Current Estimate: {latestEstimate ? `${latestEstimate.estimate_day} days` : 'No estimate yet'}
                   </Typography>
                   <Typography variant="body1">
-                    Days Worked: {totalWorkedDays.toFixed(1)} days
+                    Days Worked: {totalWorkedDays.toFixed(2)} days
                   </Typography>
                   <Typography variant="body1" mt={1}>
                     Progress: {latestEstimate 
-                      ? `${totalWorkedDays.toFixed(1)}/${latestEstimate.estimate_day} days (${calculateProgress().toFixed(0)}%)`
+                      ? `${totalWorkedDays.toFixed(2)}/${latestEstimate.estimate_day} days (${getProgressDisplay()})`
                       : 'No estimate to track progress against'
                     }
                   </Typography>
@@ -216,13 +235,14 @@ const TaskEstimatesPage: React.FC = () => {
                     <Box sx={{ width: '100%', mr: 1 }}>
                       <LinearProgress 
                         variant="determinate" 
-                        value={calculateProgress()} 
+                        value={getProgressBarValue()} 
                         sx={{ height: 10, borderRadius: 5 }}
+                        color={calculateProgress() > 100 ? "error" : "primary"}
                       />
                     </Box>
                     <Box sx={{ minWidth: 35 }}>
                       <Typography variant="body2" color="text.secondary">
-                        {calculateProgress().toFixed(0)}%
+                        {getProgressDisplay()}
                       </Typography>
                     </Box>
                   </Box>

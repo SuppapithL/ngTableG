@@ -33,7 +33,7 @@ const taskCategoryService = {
    */
   async getAllTaskCategories(filter: TaskCategoryFilter = {}): Promise<TaskCategory[]> {
     const { limit = 50, offset = 0 } = filter;
-    const response = await api.get(`/task-categories?limit=${limit}&offset=${offset}`);
+    const response = await api.get(`/api/task-categories?limit=${limit}&offset=${offset}`);
     return response.data;
   },
 
@@ -65,7 +65,7 @@ const taskCategoryService = {
    * Get a single task category by ID
    */
   async getTaskCategory(id: number): Promise<TaskCategory> {
-    const response = await api.get(`/task-categories/${id}`);
+    const response = await api.get(`/api/task-categories/${id}`);
     return response.data;
   },
 
@@ -73,7 +73,7 @@ const taskCategoryService = {
    * Create a new task category
    */
   async createTaskCategory(data: TaskCategoryCreateRequest): Promise<TaskCategory> {
-    const response = await api.post('/task-categories', data);
+    const response = await api.post('/api/task-categories', data);
     return response.data;
   },
 
@@ -81,7 +81,7 @@ const taskCategoryService = {
    * Update an existing task category
    */
   async updateTaskCategory(id: number, data: TaskCategoryUpdateRequest): Promise<TaskCategory> {
-    const response = await api.put(`/task-categories/${id}`, data);
+    const response = await api.put(`/api/task-categories/${id}`, data);
     return response.data;
   },
 
@@ -89,7 +89,7 @@ const taskCategoryService = {
    * Delete a task category
    */
   async deleteTaskCategory(id: number): Promise<void> {
-    await api.delete(`/task-categories/${id}`);
+    await api.delete(`/api/task-categories/${id}`);
   }
 };
 

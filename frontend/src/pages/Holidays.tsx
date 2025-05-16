@@ -104,7 +104,11 @@ const Holidays: React.FC = () => {
           return;
         }
         console.log('Creating holiday with:', formData);
-        await holidayService.createHoliday(formData as CreateHolidayRequest);
+        await holidayService.createHoliday({
+          date: formData.date!,
+          name: formData.name!,
+          note: formData.note
+        });
       }
       handleCloseDialog();
       await fetchHolidays();

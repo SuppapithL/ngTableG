@@ -79,7 +79,8 @@ const LeaveLogsPage: React.FC = () => {
     user_id: user?.id || 0,
     type: 'vacation',
     date: format(new Date(), 'yyyy-MM-dd'),
-    note: ''
+    note: '',
+    worked_day: 1
   };
   
   const [formData, setFormData] = useState<CreateLeaveLogRequest | UpdateLeaveLogRequest>(initialFormState);
@@ -116,15 +117,16 @@ const LeaveLogsPage: React.FC = () => {
         } else if (isAdmin) {
           // Admin viewing all leave logs
           leaveLogsData = await leaveLogService.getAllLeaveLogs(
-            undefined,
+            { limit: 100 }, // Use params object
             selectedYear > 0 ? selectedYear : undefined
           );
         } else {
           // Regular user viewing their own leave logs
-          leaveLogsData = await leaveLogService.getCurrentUserLeaveLogs(
-            selectedYear > 0 ? selectedYear : undefined,
-            selectedType || undefined
-          );
+          const params = {
+            year: selectedYear > 0 ? selectedYear : undefined,
+            type: selectedType || undefined
+          };
+          leaveLogsData = await leaveLogService.getCurrentUserLeaveLogs(params);
         }
       } catch (logsError) {
         console.error('Error fetching leave logs:', logsError);
@@ -201,7 +203,8 @@ const LeaveLogsPage: React.FC = () => {
         user_id: isAdmin ? selectedUserId : (user?.id || 0),
         type: 'vacation',
         date: format(new Date(), 'yyyy-MM-dd'),
-        note: ''
+        note: '',
+        worked_day: 1
       });
     }
     

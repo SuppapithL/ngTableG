@@ -74,6 +74,12 @@ type Querier interface {
 	ListTasksByCategory(ctx context.Context, taskCategoryID pgtype.Int4) ([]Task, error)
 	ListTasksByCategoryWithSubcategories(ctx context.Context, id int32) ([]Task, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
+	// This query synchronizes all annual records for a specific year
+	SyncAllAnnualRecordsByYear(ctx context.Context, year int32) ([]SyncAllAnnualRecordsByYearRow, error)
+	// This query synchronizes the used vacation days and sick leave days for a specific user and year
+	SyncAnnualRecordVacationDays(ctx context.Context, arg SyncAnnualRecordVacationDaysParams) (AnnualRecord, error)
+	// This query synchronizes the worked days and worked on holiday days for a specific user and year
+	SyncAnnualRecordWorkDays(ctx context.Context, arg SyncAnnualRecordWorkDaysParams) (AnnualRecord, error)
 	UpdateAnnualRecord(ctx context.Context, arg UpdateAnnualRecordParams) (AnnualRecord, error)
 	UpdateHoliday(ctx context.Context, arg UpdateHolidayParams) (Holiday, error)
 	UpdateLeaveLog(ctx context.Context, arg UpdateLeaveLogParams) (LeaveLog, error)

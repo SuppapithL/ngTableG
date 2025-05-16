@@ -57,8 +57,15 @@ const taskLogService = {
    * Create a new task log
    */
   async createTaskLog(data: TaskLogCreateRequest): Promise<TaskLog> {
-    const response = await api.post('/api/task-logs', data);
-    return response.data;
+    console.log('Creating task log with data:', data);
+    try {
+      const response = await api.post('/api/task-logs', data);
+      console.log('Task log created successfully:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating task log:', error);
+      throw error;
+    }
   },
 
   /**
@@ -89,8 +96,15 @@ const taskLogService = {
    */
   async getLogsByDateRange(filter: DateRangeFilter): Promise<TaskLog[]> {
     const { start_date, end_date } = filter;
-    const response = await api.get(`/api/task-logs/date-range?start_date=${start_date}&end_date=${end_date}`);
-    return response.data;
+    console.log(`Fetching logs by date range: ${start_date} to ${end_date}`);
+    try {
+      const response = await api.get(`/api/task-logs/by-date-range?start_date=${start_date}&end_date=${end_date}`);
+      console.log(`Received ${response.data.length} logs for date range`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching logs by date range:', error);
+      return [];
+    }
   }
 };
 

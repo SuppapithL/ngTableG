@@ -17,58 +17,33 @@ export interface CreateHolidayRequest {
 const holidayService = {
   // Get all holidays
   getAllHolidays: async (): Promise<Holiday[]> => {
-    try {
-      console.log('Fetching holidays...');
-      const response = await api.get('/holidays');
-      console.log('Holidays response:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching holidays:', error);
-      throw error;
-    }
+    const response = await api.get('/api/holidays');
+    return response.data;
   },
 
   // Get holiday by ID
   getHolidayById: async (id: number): Promise<Holiday> => {
-    try {
-      const response = await api.get(`/holidays/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching holiday ${id}:`, error);
-      throw error;
-    }
+    const response = await api.get(`/api/holidays/${id}`);
+    return response.data;
   },
 
   // Create new holiday
   createHoliday: async (holidayData: CreateHolidayRequest): Promise<Holiday> => {
-    try {
-      console.log('API createHoliday called with:', holidayData);
-      const response = await api.post('/holidays', holidayData);
-      console.log('API response:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error('API error details:', error);
-      throw error;
-    }
+    const response = await api.post('/api/holidays', holidayData);
+    return response.data;
   },
 
   // Update holiday
   updateHoliday: async (id: number, holidayData: Partial<Holiday>): Promise<Holiday> => {
-    try {
-      console.log(`Updating holiday ${id} with:`, holidayData);
-      const response = await api.put(`/holidays/${id}`, holidayData);
-      return response.data;
-    } catch (error) {
-      console.error(`Error updating holiday ${id}:`, error);
-      throw error;
-    }
+    const response = await api.put(`/api/holidays/${id}`, holidayData);
+    return response.data;
   },
 
   // Delete holiday
   deleteHoliday: async (id: number): Promise<void> => {
     try {
       console.log(`Deleting holiday ${id}`);
-      await api.delete(`/holidays/${id}`);
+      await api.delete(`/api/holidays/${id}`);
     } catch (error) {
       console.error(`Error deleting holiday ${id}:`, error);
       throw error;

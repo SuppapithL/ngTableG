@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/tonk/pkeng-tableg/db"
-	"github.com/tonk/pkeng-tableg/db/sqlc"
+	"github.com/kengtableg/pkeng-tableg/db"
+	"github.com/kengtableg/pkeng-tableg/db/sqlc"
 	"golang.org/x/crypto/bcrypt"
 )
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Stack,
@@ -9,135 +9,21 @@ import {
   CardContent,
   CardHeader,
   Divider,
-  Button,
-  IconButton
+  Button
 } from '@mui/material';
 import { 
   CalendarToday as CalendarIcon, 
   Work as WorkIcon, 
-  LocalHospital as MedicalIcon,
-  AttachMoney as MoneyIcon,
-  Refresh as RefreshIcon,
-  ChevronLeft as ChevronLeftIcon,
-  ChevronRight as ChevronRightIcon,
-  Today as TodayIcon
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import MainLayout from '../components/Layout';
 import { annualRecordService, quotaPlanService } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { AnnualRecord } from '../api/annualRecordService';
 import { QuotaPlan } from '../api/quotaPlanService';
-
-// DateCell component to display a single date
-const DateCell: React.FC<{ date: Date }> = ({ date }) => (
-  <Paper 
-    sx={{ 
-      p: 2,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 1,
-      border: '1px solid #e0e0e0',
-      height: 80,
-      width: '100%'
-    }}
-  >
-    <Typography variant="caption" color="text.secondary">
-      {date.toLocaleDateString('en-US', { month: 'short' })} {date.getFullYear()}
-    </Typography>
-    <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-      {date.getDate()}
-    </Typography>
-    <Typography variant="caption" color="text.secondary">
-      {date.toLocaleDateString('en-US', { weekday: 'short' })}
-    </Typography>
-  </Paper>
-);
-
-// DateCellsContainer component to display a scrollable vertical calendar
-const DateCellsContainer: React.FC = () => {
-  const [dates, setDates] = useState<Date[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  // Generate dates starting from a specific date and for a certain number of days
-  const generateDates = (startDate: Date, daysToAdd: number) => {
-    const newDates: Date[] = [];
-    for (let i = 0; i < daysToAdd; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      newDates.push(date);
-    }
-    return newDates;
-  };
-  
-  // Initial load of dates
-  useEffect(() => {
-    loadTodayDates();
-  }, []);
-  
-  // Load dates starting from today
-  const loadTodayDates = () => {
-    const today = new Date();
-    const initialDates = generateDates(today, 60); // Load initial 60 days
-    setDates(initialDates);
-    
-    // Scroll to top when resetting to today
-    if (containerRef.current) {
-      containerRef.current.scrollTop = 0;
-    }
-  };
-  
-  // Handle scroll to add more dates when reaching the bottom
-  const handleScroll = () => {
-    if (containerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-      // If scrolled to bottom (with a small threshold)
-      if (scrollHeight - scrollTop - clientHeight < 100 && dates.length > 0) {
-        // Generate more dates starting from the last date
-        const lastDate = new Date(dates[dates.length - 1]);
-        lastDate.setDate(lastDate.getDate() + 1);
-        const moreDates = generateDates(lastDate, 30); // Add 30 more days
-        setDates(prev => [...prev, ...moreDates]);
-      }
-    }
-  };
-  
-  return (
-    <Card sx={{ mb: 3 }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>Calendar View</Typography>
-          <Button
-            startIcon={<TodayIcon />}
-            size="small"
-            variant="outlined"
-            onClick={loadTodayDates}
-            sx={{ mr: 1 }}
-          >
-            Today
-          </Button>
-        </Box>
-        <Box 
-          ref={containerRef}
-          onScroll={handleScroll}
-          sx={{ 
-            display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
-            gap: 2,
-            maxHeight: '300px',
-            overflowY: 'auto',
-            pb: 1
-          }}
-        >
-          {dates.map((date, index) => (
-            <DateCell key={index} date={date} />
-          ))}
-        </Box>
-      </CardContent>
-    </Card>
-  );
-};
+import { DateCellsContainer, StatCard, MedicalExpenseSummary } from '../components/Dashboard';
+import { getDaysPassedInYear, getDaysInYear } from '../utils/dateUtils';
+// Annual record is now automatically synced on the server whenever leave logs or task logs are created/updated/deleted
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -153,14 +39,8 @@ const Dashboard: React.FC = () => {
     // Calculate days passed in current year and days in year
     const calculateDays = () => {
       const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const diffInMs = now.getTime() - startOfYear.getTime();
-      const dayCount = Math.floor(diffInMs / (1000 * 60 * 60 * 24)) + 1; // Add 1 to include today
-      setDaysPassed(dayCount);
-      
-      // Check if current year is a leap year
-      const isLeapYear = (now.getFullYear() % 4 === 0 && now.getFullYear() % 100 !== 0) || now.getFullYear() % 400 === 0;
-      setDaysInYear(isLeapYear ? 366 : 365);
+      setDaysPassed(getDaysPassedInYear(now));
+      setDaysInYear(getDaysInYear(now.getFullYear()));
     };
     
     calculateDays();
@@ -295,46 +175,13 @@ const Dashboard: React.FC = () => {
     
     // Calculate remaining medical expense:
     // proRatedMedicalExpense - used_medical_expense_baht
+    // No longer capping at zero to show when budget is exceeded
     return proRatedMedicalExpense - annualRecord.used_medical_expense_baht;
   };
 
   const handleRefresh = () => {
     fetchData();
   };
-
-  const StatCard = ({ 
-    title, 
-    value, 
-    icon, 
-    color 
-  }: { 
-    title: string; 
-    value: number | string; 
-    icon: React.ReactNode; 
-    color: string; 
-  }) => (
-    <Card sx={{ height: '100%' }}>
-      <CardContent sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-          <Typography variant="h6" color="text.secondary">
-            {title}
-          </Typography>
-          <Box sx={{ 
-            backgroundColor: color, 
-            borderRadius: '50%', 
-            p: 1, 
-            display: 'flex',
-            color: 'white'
-          }}>
-            {icon}
-          </Box>
-        </Box>
-        <Typography variant="h4" component="div" sx={{ mt: 'auto' }}>
-          {value}
-        </Typography>
-      </CardContent>
-    </Card>
-  );
 
   if (loading) {
     return (
@@ -389,6 +236,16 @@ const Dashboard: React.FC = () => {
 
   return (
     <MainLayout title="Dashboard">
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button 
+          startIcon={<RefreshIcon />} 
+          onClick={handleRefresh}
+          variant="outlined"
+        >
+          Refresh Data
+        </Button>
+      </Box>
+
       <Box sx={{ flexGrow: 1 }}>
         <Stack spacing={3}>
           <Stack 
@@ -411,23 +268,13 @@ const Dashboard: React.FC = () => {
                 color="#f44336" 
               />
             </Box>
-            <Box sx={{ flex: 1 }}>
-              <StatCard 
-                title="Used Medical Expenses" 
-                value={`฿${annualRecord.used_medical_expense_baht}`}
-                icon={<MedicalIcon />} 
-                color="#4caf50" 
-              />
-            </Box>
-            <Box sx={{ flex: 1 }}>
-              <StatCard 
-                title="Remaining Medical Budget" 
-                value={`฿${calculateRemainingMedicalExpense().toFixed(0)}`}
-                icon={<MoneyIcon />} 
-                color="#ff9800" 
-              />
-            </Box>
           </Stack>
+
+          {/* Medical Expenses Summary */}
+          <MedicalExpenseSummary 
+            quotaMedicalExpenseBaht={quotaPlan ? quotaPlan.quota_medical_expense_baht : 0}
+            usedMedicalExpenseBaht={annualRecord.used_medical_expense_baht}
+          />
 
           {/* Add the Date Cells Container here */}
           <DateCellsContainer />

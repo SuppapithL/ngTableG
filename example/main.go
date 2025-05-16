@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,10 +15,10 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/kengtableg/pkeng-tableg/db"
+	"github.com/kengtableg/pkeng-tableg/db/sqlc"
 	_ "github.com/lib/pq"
 	"github.com/rs/cors"
-	"github.com/tonk/pkeng-tableg/db"
-	"github.com/tonk/pkeng-tableg/db/sqlc"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -833,47 +834,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, response)
 }
 
-// Development only - handler to clear users table
-func clearUsersHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
-
-	// Begin a transaction
-	tx, err := database.Pool.Begin(ctx)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error starting transaction: "+err.Error())
-		return
-	}
-	defer tx.Rollback(ctx) // This will be ignored if transaction is committed
-
-	// Execute a series of SQL statements to delete all users
-	queries := []string{
-		"DELETE FROM users", // Simpler approach than TRUNCATE
-	}
-
-	for _, query := range queries {
-		_, err := tx.Exec(ctx, query)
-		if err != nil {
-			respondWithError(w, http.StatusInternalServerError, "Error clearing users: "+err.Error())
-			return
-		}
-	}
-
-	// Reset the ID sequence
-	_, err = tx.Exec(ctx, "ALTER SEQUENCE users_id_seq RESTART WITH 1")
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error resetting sequence: "+err.Error())
-		return
-	}
-
-	// Commit the transaction
-	err = tx.Commit(ctx)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error committing transaction: "+err.Error())
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Users table cleared successfully"})
-}
+// No longer used - removed debugging function
 
 // Holiday Handlers
 
@@ -1053,6 +1014,7 @@ func deleteHoliday(w http.ResponseWriter, r *http.Request) {
 // Handler for getting the current authenticated user
 func getCurrentUser(w http.ResponseWriter, r *http.Request) {
 	log.Printf("getCurrentUser handler called")
+	ctx := context.Background()
 
 	// Log all headers for debugging
 	log.Printf("==== Request Headers ====")
@@ -1062,31 +1024,48 @@ func getCurrentUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Return hardcoded user for testing
-	hardcodedUser := map[string]interface{}{
-		"id":         1,
-		"username":   "admin",
-		"user_type":  "admin",
-		"email":      "admin@example.com",
-		"created_at": time.Now().Format(time.RFC3339),
-		"updated_at": time.Now().Format(time.RFC3339),
-	}
-
-	jsonResponse, err := json.Marshal(hardcodedUser)
-	if err != nil {
-		log.Printf("Error marshaling JSON: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("{}"))
+	// Get the Authorization header
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		log.Printf("No authorization token provided")
+		respondWithError(w, http.StatusUnauthorized, "No authorization token provided")
 		return
 	}
 
-	log.Printf("Sending hardcoded user response")
-	log.Printf("Response data: %s", string(jsonResponse))
+	// Extract the token from the "Bearer <token>" format
+	tokenParts := strings.Split(authHeader, " ")
+	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+		log.Printf("Invalid authorization format: %s", authHeader)
+		respondWithError(w, http.StatusUnauthorized, "Invalid authorization format")
+		return
+	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(jsonResponse)
+	token := tokenParts[1]
+	log.Printf("Token: %s", token)
+
+	// Extract the username from the token
+	if !strings.HasPrefix(token, "dummy-token-") {
+		log.Printf("Invalid token format: %s", token)
+		respondWithError(w, http.StatusUnauthorized, "Invalid token")
+		return
+	}
+
+	username := strings.TrimPrefix(token, "dummy-token-")
+	log.Printf("Username extracted from token: %s", username)
+
+	// Try to find user in database
+	user, err := database.GetUserByUsername(ctx, username)
+
+	if err != nil {
+		log.Printf("User not found in database: %v", err)
+		respondWithError(w, http.StatusUnauthorized, "Invalid username or token")
+		return
+	}
+
+	// Return the user from database
+	response := userToResponse(user)
+	log.Printf("Found user in database: %+v", response)
+	respondWithJSON(w, http.StatusOK, response)
 }
 
 // Helper Functions
@@ -1141,8 +1120,17 @@ func createDefaultAdminUser(ctx context.Context) {
 		return
 	}
 
+	// Get admin password from environment variable or use a secure default
+	adminPassword := os.Getenv("DEFAULT_ADMIN_PASSWORD")
+	if adminPassword == "" {
+		// Generate a secure password if none provided
+		adminPassword = generateSecurePassword(16)
+		log.Printf("WARNING: Using generated admin password: %s", adminPassword)
+		log.Printf("Please set DEFAULT_ADMIN_PASSWORD env variable for a stable password")
+	}
+
 	// Create a default admin user
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("Error hashing default admin password: %v", err)
 		return
@@ -1171,9 +1159,18 @@ func createDefaultRegularUser(ctx context.Context) {
 		return
 	}
 
+	// Get user password from environment variable or use a secure default
+	userPassword := os.Getenv("DEFAULT_USER_PASSWORD")
+	if userPassword == "" {
+		// Generate a secure password if none provided
+		userPassword = generateSecurePassword(16)
+		log.Printf("WARNING: Using generated user password: %s", userPassword)
+		log.Printf("Please set DEFAULT_USER_PASSWORD env variable for a stable password")
+	}
+
 	// Create a default HR user
 	log.Println("Creating default HR user...")
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("user123"), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(userPassword), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("Error hashing default HR user password: %v", err)
 		return
@@ -1191,6 +1188,21 @@ func createDefaultRegularUser(ctx context.Context) {
 	} else {
 		log.Printf("Default HR user created with username: %s", user.Username)
 	}
+}
+
+// Helper function to generate a secure random password
+func generateSecurePassword(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+"
+	b := make([]byte, length)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "Temp123456!" // Fallback if random generation fails
+	}
+
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b)
 }
 
 // Add quota plan handlers
@@ -1219,46 +1231,14 @@ func getQuotaPlan(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
 		log.Printf("Error: Invalid quota plan ID: %s", vars["id"])
-
-		// Return hardcoded quota plan for testing
-		hardcodedPlan := map[string]interface{}{
-			"id":                      1,
-			"planName":                "Default",
-			"year":                    time.Now().Year(),
-			"quotaVacationDay":        10,
-			"quotaMedicalExpenseBaht": 20000,
-			"createdByUserId":         1,
-			"createdAt":               time.Now().Format(time.RFC3339),
-			"updatedAt":               time.Now().Format(time.RFC3339),
-		}
-
-		jsonResponse, _ := json.Marshal(hardcodedPlan)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(jsonResponse)
+		respondWithError(w, http.StatusBadRequest, "Invalid quota plan ID")
 		return
 	}
 
 	plan, err := database.GetQuotaPlan(ctx, int32(id))
 	if err != nil {
 		log.Printf("Error fetching quota plan: %v", err)
-
-		// Return hardcoded quota plan for testing
-		hardcodedPlan := map[string]interface{}{
-			"id":                      id,
-			"planName":                "Default",
-			"year":                    time.Now().Year(),
-			"quotaVacationDay":        10,
-			"quotaMedicalExpenseBaht": 20000,
-			"createdByUserId":         1,
-			"createdAt":               time.Now().Format(time.RFC3339),
-			"updatedAt":               time.Now().Format(time.RFC3339),
-		}
-
-		jsonResponse, _ := json.Marshal(hardcodedPlan)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(jsonResponse)
+		respondWithError(w, http.StatusNotFound, "Quota plan not found")
 		return
 	}
 
@@ -1595,6 +1575,30 @@ func scheduleNextYearRecordsCreation() {
 	}()
 }
 
+// schedulePeriodicSync sets up hourly synchronization of annual records
+func schedulePeriodicSync() {
+	go func() {
+		for {
+			// Run every hour
+			time.Sleep(1 * time.Hour)
+
+			log.Printf("Running periodic annual record sync...")
+			ctx := context.Background()
+			year := time.Now().Year()
+
+			syncService := NewAnnualRecordSyncService(database)
+			records, err := syncService.SyncAllRecordsForYear(ctx, int32(year))
+
+			if err != nil {
+				log.Printf("Error during periodic sync: %v", err)
+			} else {
+				log.Printf("Successfully synced %d annual records during periodic sync", len(records))
+			}
+		}
+	}()
+	log.Printf("Periodic annual record sync scheduled (hourly)")
+}
+
 // LoggingMiddleware logs all requests
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1627,11 +1631,19 @@ func startServer() {
 	// Schedule next year records creation
 	scheduleNextYearRecordsCreation()
 
+	// Schedule periodic sync
+	schedulePeriodicSync()
+
 	// Set up router
 	r := mux.NewRouter()
 
 	// Apply logging middleware
 	r.Use(LoggingMiddleware)
+
+	// Initialize and register AnnualRecordSyncHandler
+	syncService := NewAnnualRecordSyncService(database)
+	syncHandler := NewAnnualRecordSyncHandler(syncService)
+	syncHandler.RegisterRoutes(r)
 
 	// Routes for user management
 	r.HandleFunc("/api/users", getUsers).Methods("GET")
@@ -1715,20 +1727,21 @@ func startServer() {
 	r.HandleFunc("/api/tasks/{task_id}/estimates", getTaskEstimatesByTask).Methods("GET")
 
 	// Routes for task logs
+	r.HandleFunc("/api/task-logs/by-date-range", getTaskLogsByDateRange).Methods("GET")
 	r.HandleFunc("/api/task-logs", getTaskLogs).Methods("GET")
 	r.HandleFunc("/api/task-logs/{id}", getTaskLog).Methods("GET")
 	r.HandleFunc("/api/task-logs", createTaskLog).Methods("POST")
 	r.HandleFunc("/api/task-logs/{id}", updateTaskLog).Methods("PUT")
 	r.HandleFunc("/api/task-logs/{id}", deleteTaskLog).Methods("DELETE")
 	r.HandleFunc("/api/tasks/{task_id}/logs", getTaskLogsByTask).Methods("GET")
-	r.HandleFunc("/api/task-logs/date-range", getTaskLogsByDateRange).Methods("GET")
 
 	// Set up CORS
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   []string{"*", "http://localhost:3000"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "Content-Length", "Accept", "X-Requested-With", "Origin"},
 		AllowCredentials: true,
+		MaxAge:           86400, // 24 hours
 	}).Handler(r)
 
 	// Start server
@@ -2096,12 +2109,25 @@ func deleteMedicalExpense(w http.ResponseWriter, r *http.Request) {
 func getCurrentUserMedicalExpenses(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 
+	log.Printf("==== getCurrentUserMedicalExpenses called ====")
+
+	// Log all headers for debugging
+	log.Printf("Headers:")
+	for name, values := range r.Header {
+		for _, value := range values {
+			log.Printf("%s: %s", name, value)
+		}
+	}
+
 	// Get the current user
 	currentUser, err := getCurrentUserFromRequest(r)
 	if err != nil {
+		log.Printf("Error getting current user: %v", err)
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
+
+	log.Printf("Current user: ID=%d, Username=%s, Type=%s", currentUser.ID, currentUser.Username, currentUser.UserType)
 
 	// Parse query parameters
 	limit := 50 // Default limit
@@ -2126,43 +2152,64 @@ func getCurrentUserMedicalExpenses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	log.Printf("Query parameters: limit=%d, offset=%d, year=%d", limit, offset, year)
+
 	// If year is specified, filter by year
 	if year > 0 {
-		// For year filtering, we need to add an additional query to the database
-		// For now, we'll just return all expenses for the user and filter them in memory
-		allExpenses, err := database.ListMedicalExpensesByUser(ctx, sqlc.ListMedicalExpensesByUserParams{
-			UserID: currentUser.ID,
-			Limit:  1000, // Use a large limit to get all records
-			Offset: 0,
-		})
+		// The backend API correctly implements the `getCurrentUserMedicalExpenses` function
+		log.Printf("Fetching medical expenses by year=%d for user_id=%d", year, currentUser.ID)
+
+		// Use direct SQL query instead of the generated function which has parameter type issues
+		query := "SELECT id, user_id, amount, receipt_name, receipt_date, note, created_at FROM medical_expenses WHERE user_id = $1 AND EXTRACT(YEAR FROM receipt_date) = $2 ORDER BY receipt_date DESC"
+		rows, err := database.Pool.Query(ctx, query, currentUser.ID, year)
 
 		if err != nil {
-			log.Printf("Error fetching medical expenses: %v", err)
+			log.Printf("Error fetching medical expenses by year: %v", err)
 			respondWithError(w, http.StatusInternalServerError, "Error fetching medical expenses")
 			return
 		}
+		defer rows.Close()
 
-		// Filter by year manually
-		var filteredExpenses []sqlc.MedicalExpense
-		for _, expense := range allExpenses {
-			if expense.ReceiptDate.Valid {
-				// Get date as string and extract year
-				var dateStr string
-				expense.ReceiptDate.Scan(&dateStr)
-				if len(dateStr) >= 4 {
-					expenseYear, _ := strconv.Atoi(dateStr[:4])
-					if expenseYear == year {
-						filteredExpenses = append(filteredExpenses, expense)
-					}
-				}
+		// Parse the results manually
+		var expenses []sqlc.MedicalExpense
+		for rows.Next() {
+			var expense sqlc.MedicalExpense
+			if err := rows.Scan(
+				&expense.ID,
+				&expense.UserID,
+				&expense.Amount,
+				&expense.ReceiptName,
+				&expense.ReceiptDate,
+				&expense.Note,
+				&expense.CreatedAt,
+			); err != nil {
+				log.Printf("Error scanning expense row: %v", err)
+				continue
 			}
+			expenses = append(expenses, expense)
 		}
 
-		respondWithJSON(w, http.StatusOK, filteredExpenses)
+		if err := rows.Err(); err != nil {
+			log.Printf("Error iterating expense rows: %v", err)
+			respondWithError(w, http.StatusInternalServerError, "Error processing medical expenses")
+			return
+		}
+
+		log.Printf("Found %d medical expenses for user_id=%d and year=%d", len(expenses), currentUser.ID, year)
+		if len(expenses) > 0 {
+			log.Printf("First expense: ID=%d, Amount=%v, ReceiptName=%v",
+				expenses[0].ID,
+				expenses[0].Amount,
+				expenses[0].ReceiptName)
+		}
+
+		respondWithJSON(w, http.StatusOK, expenses)
 		return
 	}
 
 	// No year filter, use pagination
+	log.Printf("Fetching all medical expenses for user_id=%d with limit=%d, offset=%d", currentUser.ID, limit, offset)
+
 	expenses, err := database.ListMedicalExpensesByUser(ctx, sqlc.ListMedicalExpensesByUserParams{
 		UserID: currentUser.ID,
 		Limit:  int32(limit),
@@ -2173,6 +2220,14 @@ func getCurrentUserMedicalExpenses(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error fetching medical expenses: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error fetching medical expenses")
 		return
+	}
+
+	log.Printf("Found %d medical expenses for user_id=%d", len(expenses), currentUser.ID)
+	if len(expenses) > 0 {
+		log.Printf("First expense: ID=%d, Amount=%v, ReceiptName=%v",
+			expenses[0].ID,
+			expenses[0].Amount,
+			expenses[0].ReceiptName)
 	}
 
 	respondWithJSON(w, http.StatusOK, expenses)
@@ -2439,6 +2494,21 @@ func createLeaveLog(w http.ResponseWriter, r *http.Request) {
 		"created_at": leaveLog.CreatedAt,
 	}
 
+	// Extract year from date for syncing
+	year := time.Now().Year()
+	if date.Year() > 0 {
+		year = date.Year()
+	}
+
+	// Sync the annual record for this user and year
+	syncService := NewAnnualRecordSyncService(database)
+	_, syncErr := syncService.SyncUserRecordForYear(ctx, leaveLog.UserID, int32(year))
+	if syncErr != nil {
+		log.Printf("Warning: Failed to sync annual record after creating leave log: %v", syncErr)
+	} else {
+		log.Printf("Successfully synced annual record for user %d, year %d after creating leave log", leaveLog.UserID, year)
+	}
+
 	respondWithJSON(w, http.StatusCreated, enrichedLog)
 }
 
@@ -2552,6 +2622,21 @@ func updateLeaveLog(w http.ResponseWriter, r *http.Request) {
 		"created_at": updatedLeaveLog.CreatedAt,
 	}
 
+	// Extract year from date for syncing
+	year := time.Now().Year()
+	if updatedLeaveLog.Date.Time.Year() > 0 {
+		year = updatedLeaveLog.Date.Time.Year()
+	}
+
+	// Sync the annual record for this user and year
+	syncService := NewAnnualRecordSyncService(database)
+	_, syncErr := syncService.SyncUserRecordForYear(ctx, updatedLeaveLog.UserID, int32(year))
+	if syncErr != nil {
+		log.Printf("Warning: Failed to sync annual record after updating leave log: %v", syncErr)
+	} else {
+		log.Printf("Successfully synced annual record for user %d, year %d after updating leave log", updatedLeaveLog.UserID, year)
+	}
+
 	respondWithJSON(w, http.StatusOK, enrichedLog)
 }
 
@@ -2587,11 +2672,27 @@ func deleteLeaveLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Extract user ID and year before deletion for syncing afterward
+	userID := existingLeaveLog.UserID
+	year := time.Now().Year()
+	if existingLeaveLog.Date.Time.Year() > 0 {
+		year = existingLeaveLog.Date.Time.Year()
+	}
+
 	// Delete the leave log
 	if err := database.DeleteLeaveLog(ctx, int32(id)); err != nil {
 		log.Printf("Error deleting leave log: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error deleting leave log")
 		return
+	}
+
+	// Sync the annual record for this user and year
+	syncService := NewAnnualRecordSyncService(database)
+	_, syncErr := syncService.SyncUserRecordForYear(ctx, userID, int32(year))
+	if syncErr != nil {
+		log.Printf("Warning: Failed to sync annual record after deleting leave log: %v", syncErr)
+	} else {
+		log.Printf("Successfully synced annual record for user %d, year %d after deleting leave log", userID, year)
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Leave log deleted successfully"})

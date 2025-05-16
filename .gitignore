@@ -22,6 +22,8 @@
 # Debug files
 *.out
 debug/
+example/debug/
+example/fix_hr/
 
 # Dependencies
 node_modules/
