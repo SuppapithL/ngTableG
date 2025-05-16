@@ -11,12 +11,9 @@ git add .
 # Commit the changes
 git commit -m "Cleaned up codebase: removed personal information, fixed imports, and removed unused debug code"
 
-# Push to GitHub (uncomment the appropriate line)
-# For main branch
-# git push -u origin main
-
-# For master branch
-# git push -u origin master
+# Push to GitHub
+# Based on the git status output, we're on master branch
+git push -u origin master
 
 # Show status
 git status
